@@ -32,6 +32,18 @@ struct HighlightingTextField: NSViewRepresentable {
         textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = true
         textView.autoresizingMask = [.height]
+        textView.minSize = NSSize(
+            width: 0,
+            height: scrollView.contentSize.height
+        )
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.frame = NSRect(
+            origin: .zero,
+            size: scrollView.contentSize
+        )
         textView.font = .systemFont(ofSize: 20, weight: .medium)
         textView.textColor = .labelColor
         textView.textContainerInset = .zero
@@ -72,6 +84,7 @@ struct HighlightingTextField: NSViewRepresentable {
 
         textView.recognizedRanges = recognizedRanges
         context.coordinator.applyHighlight(to: textView)
+        context.coordinator.revealSelection(in: textView)
 
         if context.coordinator.lastFocusRequestID != focusRequestID {
             context.coordinator.lastFocusRequestID = focusRequestID
@@ -92,6 +105,12 @@ struct HighlightingTextField: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            revealSelection(in: textView)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            revealSelection(in: textView)
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -133,6 +152,47 @@ struct HighlightingTextField: NSViewRepresentable {
                 )
             }
             storage.endEditing()
+        }
+
+        func revealSelection(in textView: NSTextView) {
+            guard
+                let scrollView = textView.enclosingScrollView,
+                let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else {
+                return
+            }
+
+            layoutManager.ensureLayout(for: textContainer)
+
+            let usedRect = layoutManager.usedRect(
+                for: textContainer
+            )
+            let viewportSize = scrollView.contentSize
+            let contentWidth = max(
+                viewportSize.width,
+                ceil(usedRect.maxX + 2)
+            )
+            let contentHeight = max(
+                viewportSize.height,
+                textView.frame.height
+            )
+
+            if
+                abs(textView.frame.width - contentWidth) > 0.5 ||
+                abs(textView.frame.height - contentHeight) > 0.5
+            {
+                textView.setFrameSize(
+                    NSSize(
+                        width: contentWidth,
+                        height: contentHeight
+                    )
+                )
+            }
+
+            textView.scrollRangeToVisible(
+                textView.selectedRange()
+            )
         }
     }
 }
