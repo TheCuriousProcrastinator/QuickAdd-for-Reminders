@@ -11,6 +11,7 @@ struct HighlightingTextField: NSViewRepresentable {
     let onMoveSuggestion: (Int) -> Bool
     let onMoveToNotes: () -> Void
     let onRejectRecognition: (NSRange) -> Void
+    let onDropURL: (URL) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -64,6 +65,10 @@ struct HighlightingTextField: NSViewRepresentable {
         textView.onMoveToNotes = {
             context.coordinator.parent.onMoveToNotes()
         }
+        textView.onDropURL = { url in
+            context.coordinator.parent.onDropURL(url)
+        }
+        textView.registerForDraggedTypes([.URL, .string])
 
         scrollView.documentView = textView
         return scrollView
@@ -111,6 +116,25 @@ struct HighlightingTextField: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             revealSelection(in: textView)
+        }
+
+        func textView(
+            _ textView: NSTextView,
+            shouldChangeTextIn affectedCharRange: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            guard
+                let replacementString,
+                let url = webURL(from: replacementString)
+            else {
+                return true
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.onDropURL(url)
+                textView.window?.makeFirstResponder(textView)
+            }
+            return false
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -202,6 +226,7 @@ private final class RecognitionTextView: NSTextView {
     var onRecognizedClick: ((NSRange) -> Void)?
     var onSubmit: (() -> Void)?
     var onMoveToNotes: (() -> Void)?
+    var onDropURL: ((URL) -> Void)?
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36, !hasMarkedText() {
@@ -235,6 +260,22 @@ private final class RecognitionTextView: NSTextView {
         }
     }
 
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let url = droppedWebURL(from: sender.draggingPasteboard) {
+            onDropURL?(url)
+            window?.makeFirstResponder(self)
+            return true
+        }
+
+        return super.performDragOperation(sender)
+    }
+
+    private func droppedWebURL(from pasteboard: NSPasteboard) -> URL? {
+        let value = pasteboard.string(forType: .URL)
+            ?? pasteboard.string(forType: .string)
+        return value.flatMap(webURL)
+    }
+
     private func characterIndex(at windowPoint: NSPoint) -> Int? {
         guard let layoutManager, let textContainer else { return nil }
         let point = convert(windowPoint, from: nil)
@@ -251,6 +292,20 @@ private final class RecognitionTextView: NSTextView {
         guard glyphRect.insetBy(dx: -2, dy: -2).contains(containerPoint) else { return nil }
         return layoutManager.characterIndexForGlyph(at: glyphIndex)
     }
+}
+
+private func webURL(from value: String) -> URL? {
+    let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard
+        let url = URL(string: trimmedValue),
+        let scheme = url.scheme?.lowercased(),
+        ["http", "https"].contains(scheme),
+        url.host != nil
+    else {
+        return nil
+    }
+
+    return url
 }
 
 struct NotesTextEditor: NSViewRepresentable {

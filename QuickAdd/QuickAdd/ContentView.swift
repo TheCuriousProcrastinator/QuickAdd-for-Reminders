@@ -85,6 +85,7 @@ struct ContentView: View {
 
     @State private var title = ""
     @State private var notes = ""
+    @State private var reminderURL: URL?
     @State private var selectedListID = ""
     @State private var selectedPriority = 0
     @State private var dueDate = Date()
@@ -173,7 +174,13 @@ struct ContentView: View {
                                 hideSlashSuggestions()
                                 notesFocusRequestID += 1
                             },
-                            onRejectRecognition: rejectNaturalMetadata
+                            onRejectRecognition: rejectNaturalMetadata,
+                            onDropURL: { url in
+                                reminderURL = url
+                                if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    title = websiteName(for: url)
+                                }
+                            }
                         )
                         .frame(height: 27)
                     }
@@ -257,6 +264,10 @@ struct ContentView: View {
                         }
 
                         priorityControl
+
+                        if reminderURL != nil {
+                            linkControl
+                        }
                     }
                     .padding(.horizontal, 2)
                     .padding(.vertical, 7)
@@ -319,6 +330,7 @@ struct ContentView: View {
         }
         .onChange(of: hasDueTime) { _, _ in onLayoutChange() }
         .onChange(of: notes) { _, _ in onLayoutChange() }
+        .onChange(of: reminderURL) { _, _ in onLayoutChange() }
         .onChange(of: notesIsFocused) { _, _ in onLayoutChange() }
         .onChange(of: errorMessage) { _, _ in onLayoutChange() }
         .task {
@@ -394,6 +406,7 @@ struct ContentView: View {
         if !trimmedNotes.isEmpty {
             reminder.notes = trimmedNotes
         }
+        reminder.url = reminderURL
         reminder.priority = selectedPriority
         if let recurrence = recognizedRecurrenceResult?.recurrence {
             reminder.addRecurrenceRule(eventKitRule(for: recurrence))
@@ -401,8 +414,17 @@ struct ContentView: View {
 
         do {
             try eventStore.save(reminder, commit: true)
+            if let reminderURL {
+                addRichLinkOrNotesFallback(
+                    reminderURL,
+                    to: reminder,
+                    in: list,
+                    existingNotes: trimmedNotes
+                )
+            }
             title = ""
             notes = ""
+            reminderURL = nil
             dueDate = Date()
             hasDueDate = false
             hasDueTime = false
@@ -412,6 +434,45 @@ struct ContentView: View {
             isSaving = false
             errorMessage = "Could not save reminder: \(error.localizedDescription)"
         }
+    }
+
+    private func addRichLinkOrNotesFallback(
+        _ url: URL,
+        to reminder: EKReminder,
+        in list: EKCalendar,
+        existingNotes: String
+    ) {
+        let externalIdentifier = reminder.calendarItemExternalIdentifier ?? ""
+        var result: Int32 = 1
+        var failureMessage = "Created reminder has no external identifier."
+
+        if !externalIdentifier.isEmpty {
+            var errorBuffer = [CChar](repeating: 0, count: 2048)
+            result = list.calendarIdentifier.withCString { listID in
+                externalIdentifier.withCString { identifier in
+                    url.absoluteString.withCString { urlString in
+                        add_rich_link_to_existing_reminder(
+                            listID,
+                            identifier,
+                            urlString,
+                            &errorBuffer,
+                            Int32(errorBuffer.count)
+                        )
+                    }
+                }
+            }
+            failureMessage = String(cString: errorBuffer)
+        }
+
+        guard result != 0, !existingNotes.contains(url.absoluteString) else { return }
+
+        NSLog("QuickAdd rich-link fallback: %@", failureMessage)
+
+        reminder.notes = existingNotes.isEmpty
+            ? url.absoluteString
+            : existingNotes + "\n\n" + url.absoluteString
+
+        try? eventStore.save(reminder, commit: true)
     }
 
     @ViewBuilder
@@ -546,6 +607,42 @@ struct ContentView: View {
         .focused($focusedControl, equals: .priority)
         .disabled(isSaving)
         .metadataItemStyle(accented: selectedPriority != 0)
+    }
+
+    private var linkControl: some View {
+        Menu {
+            Button("Remove Link", role: .destructive) {
+                reminderURL = nil
+            }
+        } label: {
+            metadataLabel(reminderURL?.host ?? "Link", systemImage: "link", accented: true)
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(isSaving)
+        .metadataItemStyle(accented: true)
+        .help(reminderURL?.absoluteString ?? "")
+    }
+
+    private func websiteName(for url: URL) -> String {
+        guard let host = url.host?.lowercased() else { return "Website" }
+
+        var labels = host.split(separator: ".").map(String.init)
+        if labels.first == "www" {
+            labels.removeFirst()
+        }
+
+        guard labels.count > 1 else { return labels.first ?? "Website" }
+
+        let secondLevelCountrySuffixes: Set<String> = [
+            "ac", "co", "com", "edu", "gov", "net", "org"
+        ]
+        let usesSecondLevelCountrySuffix = labels.count > 2
+            && labels.last?.count == 2
+            && secondLevelCountrySuffixes.contains(labels[labels.count - 2])
+
+        return usesSecondLevelCountrySuffix
+            ? labels[labels.count - 3]
+            : labels[labels.count - 2]
     }
 
     private var listLabel: String {
