@@ -6,12 +6,13 @@ struct HighlightingTextField: NSViewRepresentable {
 
     let recognizedRanges: [NSRange]
     let focusRequestID: Int
+    let caretToEndRequestID: Int
     let onSubmit: () -> Void
     let onEscape: () -> Void
     let onMoveSuggestion: (Int) -> Bool
     let onMoveToNotes: () -> Void
     let onRejectRecognition: (NSRange) -> Void
-    let onDropURL: (URL) -> Void
+    let onDropURL: (URL, String?) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -65,8 +66,8 @@ struct HighlightingTextField: NSViewRepresentable {
         textView.onMoveToNotes = {
             context.coordinator.parent.onMoveToNotes()
         }
-        textView.onDropURL = { url in
-            context.coordinator.parent.onDropURL(url)
+        textView.onDropURL = { url, suggestedTitle in
+            context.coordinator.parent.onDropURL(url, suggestedTitle)
         }
         textView.registerForDraggedTypes([.URL, .string])
 
@@ -91,6 +92,16 @@ struct HighlightingTextField: NSViewRepresentable {
         context.coordinator.applyHighlight(to: textView)
         context.coordinator.revealSelection(in: textView)
 
+        if context.coordinator.lastCaretToEndRequestID != caretToEndRequestID {
+            context.coordinator.lastCaretToEndRequestID = caretToEndRequestID
+            DispatchQueue.main.async {
+                let end = (textView.string as NSString).length
+                textView.setSelectedRange(NSRange(location: end, length: 0))
+                textView.scrollRangeToVisible(textView.selectedRange())
+                textView.window?.makeFirstResponder(textView)
+            }
+        }
+
         if context.coordinator.lastFocusRequestID != focusRequestID {
             context.coordinator.lastFocusRequestID = focusRequestID
             DispatchQueue.main.async {
@@ -102,6 +113,7 @@ struct HighlightingTextField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: HighlightingTextField
         var lastFocusRequestID = -1
+        var lastCaretToEndRequestID = -1
 
         init(_ parent: HighlightingTextField) {
             self.parent = parent
@@ -131,7 +143,7 @@ struct HighlightingTextField: NSViewRepresentable {
             }
 
             DispatchQueue.main.async { [weak self] in
-                self?.parent.onDropURL(url)
+                self?.parent.onDropURL(url, nil)
                 textView.window?.makeFirstResponder(textView)
             }
             return false
@@ -226,7 +238,7 @@ private final class RecognitionTextView: NSTextView {
     var onRecognizedClick: ((NSRange) -> Void)?
     var onSubmit: (() -> Void)?
     var onMoveToNotes: (() -> Void)?
-    var onDropURL: ((URL) -> Void)?
+    var onDropURL: ((URL, String?) -> Void)?
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36, !hasMarkedText() {
@@ -262,7 +274,7 @@ private final class RecognitionTextView: NSTextView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         if let url = droppedWebURL(from: sender.draggingPasteboard) {
-            onDropURL?(url)
+            onDropURL?(url, droppedURLTitle(from: sender.draggingPasteboard, url: url))
             window?.makeFirstResponder(self)
             return true
         }
@@ -274,6 +286,29 @@ private final class RecognitionTextView: NSTextView {
         let value = pasteboard.string(forType: .URL)
             ?? pasteboard.string(forType: .string)
         return value.flatMap(webURL)
+    }
+
+    private func droppedURLTitle(from pasteboard: NSPasteboard, url: URL) -> String? {
+        let modernTitle = pasteboard.string(
+            forType: NSPasteboard.PasteboardType("public.url-name")
+        )
+        let legacyType = NSPasteboard.PasteboardType("WebURLsWithTitlesPboardType")
+        let legacyTitle = (pasteboard.propertyList(forType: legacyType) as? [[String]])?
+            .dropFirst()
+            .first?
+            .first
+        let title = (modernTitle ?? legacyTitle)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard
+            let title,
+            !title.isEmpty,
+            title.caseInsensitiveCompare(url.absoluteString) != .orderedSame
+        else {
+            return nil
+        }
+
+        return title
     }
 
     private func characterIndex(at windowPoint: NSPoint) -> Int? {

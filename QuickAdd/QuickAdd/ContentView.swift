@@ -107,6 +107,7 @@ struct ContentView: View {
     @State private var applyingSmartPrioritySelection = false
     @State private var rejectedRecognitionOccurrences: [RejectedRecognitionOccurrence] = []
     @State private var focusRequestID = 0
+    @State private var caretToEndRequestID = 0
     @State private var notesFocusRequestID = 0
     @State private var notesIsFocused = false
     @State private var isDatePickerPresented = false
@@ -157,6 +158,7 @@ struct ContentView: View {
                             text: $title,
                             recognizedRanges: recognizedRanges,
                             focusRequestID: focusRequestID,
+                            caretToEndRequestID: caretToEndRequestID,
                             onSubmit: {
                                 if !acceptSuggestion() {
                                     submitTitle()
@@ -175,12 +177,7 @@ struct ContentView: View {
                                 notesFocusRequestID += 1
                             },
                             onRejectRecognition: rejectNaturalMetadata,
-                            onDropURL: { url in
-                                reminderURL = url
-                                if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    title = websiteName(for: url)
-                                }
-                            }
+                            onDropURL: captureURL
                         )
                         .frame(height: 27)
                     }
@@ -643,6 +640,150 @@ struct ContentView: View {
         return usesSecondLevelCountrySuffix
             ? labels[labels.count - 3]
             : labels[labels.count - 2]
+    }
+
+    private func captureURL(_ url: URL, suggestedTitle: String?) {
+        reminderURL = url
+
+        guard title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            prepareTitleForContinuedTyping(title)
+            return
+        }
+
+        let generatedTitle = suggestedTitle.flatMap(cleanedPageTitle)
+            ?? websiteName(for: url)
+        prepareTitleForContinuedTyping(generatedTitle)
+
+        Task {
+            guard let fetchedTitle = await fetchPageTitle(for: url) else { return }
+            guard reminderURL == url, title == generatedTitle + " " else { return }
+            prepareTitleForContinuedTyping(fetchedTitle)
+        }
+    }
+
+    private func prepareTitleForContinuedTyping(_ value: String) {
+        var updatedTitle = value
+        while updatedTitle.last?.isWhitespace == true {
+            updatedTitle.removeLast()
+        }
+        updatedTitle.append(" ")
+        title = updatedTitle
+        caretToEndRequestID += 1
+    }
+
+    private func fetchPageTitle(for url: URL) async -> String? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        request.setValue("bytes=0-524287", forHTTPHeaderField: "Range")
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15 Safari/605.1.15",
+            forHTTPHeaderField: "User-Agent"
+        )
+
+        guard
+            let (data, response) = try? await URLSession.shared.data(for: request),
+            let httpResponse = response as? HTTPURLResponse,
+            (200...299).contains(httpResponse.statusCode),
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
+            contentType.contains("text/html") || contentType.contains("application/xhtml+xml")
+        else {
+            return nil
+        }
+
+        let limitedData = data.prefix(524_288)
+        guard let html = String(data: limitedData, encoding: .utf8)
+            ?? String(data: limitedData, encoding: .isoLatin1) else { return nil }
+
+        return extractedPageTitle(from: html)
+    }
+
+    private func extractedPageTitle(from html: String) -> String? {
+        let metaTags = matches(for: #"<meta\b[^>]*>"#, in: html)
+        for tag in metaTags {
+            let key = htmlAttribute("property", in: tag)
+                ?? htmlAttribute("name", in: tag)
+            guard key?.caseInsensitiveCompare("og:title") == .orderedSame else { continue }
+            if let content = htmlAttribute("content", in: tag) {
+                return cleanedPageTitle(content)
+            }
+        }
+
+        guard let title = firstCapture(
+            for: #"<title\b[^>]*>(.*?)</title>"#,
+            in: html
+        ) else {
+            return nil
+        }
+        return cleanedPageTitle(title)
+    }
+
+    private func htmlAttribute(_ name: String, in tag: String) -> String? {
+        let escapedName = NSRegularExpression.escapedPattern(for: name)
+        return firstCapture(
+            for: "\\b\(escapedName)\\s*=\\s*([\\\"'])(.*?)\\1",
+            captureGroup: 2,
+            in: tag
+        )
+    }
+
+    private func matches(for pattern: String, in value: String) -> [String] {
+        guard let expression = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else {
+            return []
+        }
+        let range = NSRange(value.startIndex..., in: value)
+        return expression.matches(in: value, range: range).compactMap { match in
+            Range(match.range, in: value).map { String(value[$0]) }
+        }
+    }
+
+    private func firstCapture(
+        for pattern: String,
+        captureGroup: Int = 1,
+        in value: String
+    ) -> String? {
+        guard let expression = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else {
+            return nil
+        }
+        let range = NSRange(value.startIndex..., in: value)
+        guard
+            let match = expression.firstMatch(in: value, range: range),
+            captureGroup < match.numberOfRanges,
+            let captureRange = Range(match.range(at: captureGroup), in: value)
+        else {
+            return nil
+        }
+        return String(value[captureRange])
+    }
+
+    private func cleanedPageTitle(_ rawTitle: String) -> String? {
+        let decodedTitle: String
+        if
+            let data = rawTitle.data(using: .utf8),
+            let attributedTitle = try? NSAttributedString(
+                data: data,
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue
+                ],
+                documentAttributes: nil
+            )
+        {
+            decodedTitle = attributedTitle.string
+        } else {
+            decodedTitle = rawTitle
+        }
+
+        let cleanedTitle = decodedTitle
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanedTitle.isEmpty ? nil : cleanedTitle
     }
 
     private var listLabel: String {
