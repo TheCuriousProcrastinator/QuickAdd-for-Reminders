@@ -672,6 +672,10 @@ struct ContentView: View {
     }
 
     private func fetchPageTitle(for url: URL) async -> String? {
+        if isYouTubeURL(url), let title = await fetchYouTubeTitle(for: url) {
+            return title
+        }
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
@@ -696,6 +700,38 @@ struct ContentView: View {
             ?? String(data: limitedData, encoding: .isoLatin1) else { return nil }
 
         return extractedPageTitle(from: html)
+    }
+
+    private func isYouTubeURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "youtu.be"
+            || host == "youtube.com"
+            || host.hasSuffix(".youtube.com")
+    }
+
+    private func fetchYouTubeTitle(for url: URL) async -> String? {
+        var components = URLComponents(string: "https://www.youtube.com/oembed")
+        components?.queryItems = [
+            URLQueryItem(name: "url", value: url.absoluteString),
+            URLQueryItem(name: "format", value: "json")
+        ]
+        guard let endpoint = components?.url else { return nil }
+
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        guard
+            let (data, response) = try? await URLSession.shared.data(for: request),
+            let httpResponse = response as? HTTPURLResponse,
+            (200...299).contains(httpResponse.statusCode),
+            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let title = payload["title"] as? String
+        else {
+            return nil
+        }
+
+        return cleanedPageTitle(title)
     }
 
     private func extractedPageTitle(from html: String) -> String? {
