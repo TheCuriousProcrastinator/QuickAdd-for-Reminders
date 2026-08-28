@@ -22,6 +22,21 @@ enum NaturalDateParser {
     ]
 
     private static let weekdayPattern = "sunday|sun|monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thur|thurs|friday|fri|saturday|sat"
+    private static let ordinals: [String: Int] = [
+        "1st": 1, "first": 1, "2nd": 2, "second": 2,
+        "3rd": 3, "third": 3, "4th": 4, "fourth": 4,
+        "5th": 5, "fifth": 5, "last": -1
+    ]
+    private static let ordinalPattern = "1st|first|2nd|second|3rd|third|4th|fourth|5th|fifth|last"
+    private static let months: [String: Int] = [
+        "january": 1, "jan": 1, "february": 2, "feb": 2,
+        "march": 3, "mar": 3, "april": 4, "apr": 4,
+        "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+        "august": 8, "aug": 8, "september": 9, "sept": 9, "sep": 9,
+        "october": 10, "oct": 10, "november": 11, "nov": 11,
+        "december": 12, "dec": 12
+    ]
+    private static let monthPattern = "january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec"
     private static let timePattern = #"(?:noon|\d{1,2}(?::\d{2})?\s*(?:am|pm)|(?:[01]?\d|2[0-3]):[0-5]\d|(?:[01]\d|2[0-3])[0-5]\d)"#
 
     static func parseResults(
@@ -79,6 +94,37 @@ enum NaturalDateParser {
         calendar: Calendar,
         excluding excludedRanges: [NSRange]
     ) -> NaturalDateParseResult? {
+        let ordinalWeekdayPattern = #"\b(?:(?:on\s+)?the\s+|on\s+)?("#
+            + ordinalPattern + #")\s+("# + weekdayPattern
+            + #")\s+(?:of|in)\s+("# + monthPattern
+            + #")(?:\s*,?\s*(\d{4}))?(?:\s+(?:at\s+)?("# + timePattern + #"))?\b"#
+        if let match = firstMatch(ordinalWeekdayPattern, in: text, excluding: excludedRanges) {
+            guard
+                let ordinalToken = capture(1, from: match, in: text)?.lowercased(),
+                let weekNumber = ordinals[ordinalToken],
+                let weekdayToken = capture(2, from: match, in: text)?.lowercased(),
+                let weekday = weekdays[weekdayToken],
+                let monthToken = capture(3, from: match, in: text)?.lowercased(),
+                let month = months[monthToken],
+                let date = resolveOrdinalWeekdayOfMonth(
+                    weekday: weekday,
+                    weekNumber: weekNumber,
+                    month: month,
+                    year: capture(4, from: match, in: text).flatMap(Int.init),
+                    now: now,
+                    calendar: calendar
+                )
+            else {
+                return nil
+            }
+
+            return result(
+                for: match,
+                in: text,
+                date: applyingTime(capture(5, from: match, in: text), to: date, calendar: calendar)
+            )
+        }
+
         let specialPattern = #"\b(next\s+weekend|(?:this\s+)?weekend|next\s+week|next\s+month)(?:\s+(?:at\s+)?("# + timePattern + #"))?\b"#
         if let match = firstMatch(specialPattern, in: text, excluding: excludedRanges),
            let token = capture(1, from: match, in: text),
@@ -161,6 +207,82 @@ enum NaturalDateParser {
         var offset = (weekday - current + 7) % 7
         if offset == 0 && !allowToday { offset = 7 }
         return calendar.date(byAdding: .day, value: offset, to: date)
+    }
+
+    private static func resolveOrdinalWeekdayOfMonth(
+        weekday: Int,
+        weekNumber: Int,
+        month: Int,
+        year: Int?,
+        now: Date,
+        calendar: Calendar
+    ) -> Date? {
+        let today = calendar.startOfDay(for: now)
+        let currentYear = calendar.component(.year, from: today)
+
+        if let year {
+            return ordinalWeekdayDate(
+                weekday: weekday,
+                weekNumber: weekNumber,
+                month: month,
+                year: year,
+                calendar: calendar
+            )
+        }
+
+        for candidateYear in currentYear...(currentYear + 20) {
+            if let candidate = ordinalWeekdayDate(
+                weekday: weekday,
+                weekNumber: weekNumber,
+                month: month,
+                year: candidateYear,
+                calendar: calendar
+            ), candidate >= today {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    private static func ordinalWeekdayDate(
+        weekday: Int,
+        weekNumber: Int,
+        month: Int,
+        year: Int,
+        calendar: Calendar
+    ) -> Date? {
+        guard let monthStart = calendar.date(
+            from: DateComponents(year: year, month: month, day: 1)
+        ) else {
+            return nil
+        }
+
+        let candidate: Date?
+        if weekNumber == -1 {
+            guard
+                let nextMonth = calendar.date(byAdding: .month, value: 1, to: monthStart),
+                let lastDay = calendar.date(byAdding: .day, value: -1, to: nextMonth)
+            else {
+                return nil
+            }
+            let offset = (calendar.component(.weekday, from: lastDay) - weekday + 7) % 7
+            candidate = calendar.date(byAdding: .day, value: -offset, to: lastDay)
+        } else {
+            let firstWeekday = calendar.component(.weekday, from: monthStart)
+            let day = 1 + (weekday - firstWeekday + 7) % 7 + (weekNumber - 1) * 7
+            candidate = calendar.date(
+                from: DateComponents(year: year, month: month, day: day)
+            )
+        }
+
+        guard
+            let candidate,
+            calendar.component(.year, from: candidate) == year,
+            calendar.component(.month, from: candidate) == month
+        else {
+            return nil
+        }
+        return calendar.startOfDay(for: candidate)
     }
 
     private static func applyingTime(_ token: String?, to date: Date, calendar: Calendar) -> (date: Date, hasTime: Bool) {
