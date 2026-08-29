@@ -81,7 +81,6 @@ struct ContentView: View {
     private let onSubmit: () -> Void
     private let onEscape: () -> Void
     private let onLayoutChange: () -> Void
-    private let lastUsedListKey = "lastUsedReminderListIdentifier"
 
     @State private var title = ""
     @State private var notes = ""
@@ -301,7 +300,6 @@ struct ContentView: View {
         .onExitCommand(perform: onEscape)
         .onChange(of: selectedListID) { _, listID in
             guard !listID.isEmpty else { return }
-            UserDefaults.standard.set(listID, forKey: lastUsedListKey)
             updateInlineListForManualSelection(listID)
         }
         .onChange(of: selectedPriority) { _, priority in
@@ -376,12 +374,7 @@ struct ContentView: View {
             return
         }
 
-        let lastUsedListID = UserDefaults.standard.string(forKey: lastUsedListKey)
-        let defaultListID = eventStore.defaultCalendarForNewReminders()?.calendarIdentifier
-        selectedListID = [lastUsedListID, defaultListID]
-            .compactMap { $0 }
-            .first { listID in lists.contains { $0.calendarIdentifier == listID } }
-            ?? lists[0].calendarIdentifier
+        selectedListID = defaultReminderListID
     }
 
     private func submitTitle() {
@@ -426,6 +419,7 @@ struct ContentView: View {
             hasDueDate = false
             hasDueTime = false
             selectedPriority = 0
+            selectedListID = defaultReminderListID
             onSubmit()
         } catch {
             isSaving = false
@@ -825,6 +819,15 @@ struct ContentView: View {
     private var listLabel: String {
         if isLoadingLists { return "Loading…" }
         return lists.first(where: { $0.calendarIdentifier == selectedListID })?.title ?? "List"
+    }
+
+    private var defaultReminderListID: String {
+        lists.first {
+            $0.title.caseInsensitiveCompare("Inbox") == .orderedSame
+        }?.calendarIdentifier
+            ?? eventStore.defaultCalendarForNewReminders()?.calendarIdentifier
+            ?? lists.first?.calendarIdentifier
+            ?? ""
     }
 
     private var dueDateLabel: String {
