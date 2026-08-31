@@ -99,6 +99,7 @@ struct ContentView: View {
     @State private var applyingSmartListSelection = false
     @State private var recognizedDateResult: NaturalDateParseResult?
     @State private var recognizedTimeResult: NaturalDateParseResult?
+    @State private var recognizedNoDateResult: NaturalNoDateParseResult?
     @State private var recognizedRecurrenceResult: NaturalRecurrenceParseResult?
     @State private var recognizedPriorityResult: NaturalPriorityParseResult?
     @State private var smartPriorityIsActive = false
@@ -888,6 +889,7 @@ struct ContentView: View {
     }
 
     private func applyNaturalMetadata(from title: String) {
+        recognizedNoDateResult = nil
         if let recurrenceResult = acceptedNaturalRecurrence(in: title) {
             recognizedRecurrenceResult = recurrenceResult
             recognizedDateResult = nil
@@ -906,6 +908,12 @@ struct ContentView: View {
         let results = acceptedNaturalDateAndTime(in: title)
         recognizedDateResult = results.date
         recognizedTimeResult = results.time
+        recognizedNoDateResult = results.noDate
+        if results.noDate != nil {
+            // Clear only automatic metadata; explicit manual selections still win.
+            clearProvisionalDate()
+            return
+        }
 
         guard let dateResult = results.date else {
             if let timeResult = results.time {
@@ -964,6 +972,7 @@ struct ContentView: View {
         [
             recognizedRecurrenceResult?.recognizedRange ?? recognizedDateResult?.recognizedRange,
             recognizedTimeResult?.recognizedRange,
+            recognizedNoDateResult?.recognizedRange,
             recognizedPriorityResult?.recognizedRange
         ].compactMap { $0 }
     }
@@ -1032,6 +1041,8 @@ struct ContentView: View {
             text = recognizedDateResult?.recognizedText
         } else if recognizedTimeResult.map({ NSEqualRanges($0.recognizedRange, range) }) == true {
             text = recognizedTimeResult?.recognizedText
+        } else if recognizedNoDateResult.map({ NSEqualRanges($0.recognizedRange, range) }) == true {
+            text = recognizedNoDateResult?.recognizedText
         } else {
             text = nil
         }
