@@ -127,6 +127,9 @@ struct NaturalDateParserRegression {
     }
 
     static func extendedGrammarChecks() {
+        expect("September 4", date(2026, 9, 4))
+        expect("sep 4", date(2026, 9, 4))
+        expect("on sep 4", date(2026, 9, 4))
         let months = [
             ["Jan", "January"], ["Feb", "February"], ["Mar", "March"], ["Apr", "April"],
             ["May"], ["Jun", "June"], ["Jul", "July"], ["Aug", "August"],

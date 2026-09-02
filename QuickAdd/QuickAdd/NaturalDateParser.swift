@@ -49,7 +49,7 @@ enum NaturalDateParser {
     private static let dayPeriodPattern = "morning|afternoon|evening|night"
     private static let timePattern = "(?:\(numericTimePattern)|(?:in\\s+the\\s+)?(?:\(dayPeriodPattern)))"
     private static let calendarOffsetPattern = #"(\d+)\s+(days?|weeks?|months?)\s+(before|after)\s+"#
-    private static let monthDayPattern = #"(?:("#
+    private static let monthDayPattern = #"(?:on\s+)?(?:("#
         + monthPattern + #")\s+(\d{1,2})|(\d{1,2})\s+("# + monthPattern
         + #"))(?:(?:\s*,\s*|\s+)(\d{4}))?\b"#
     private static let calendarDatePattern = #"\b(?:"# + calendarOffsetPattern + #")?"# + monthDayPattern
