@@ -6,14 +6,21 @@
 import AppKit
 import SwiftUI
 
+private final class QuickAddHostingView<Content: View>: NSHostingView<Content> {
+    override var safeAreaInsets: NSEdgeInsets {
+        NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    }
+}
+
 final class QuickAddPanelController {
+    private static let panelWidth: CGFloat = 580
     private let panel: NSPanel
     private var didBecomeKeyObserver: NSObjectProtocol?
     private var hasInitialPlacement = false
 
     init() {
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 1),
+            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 1),
             styleMask: [.titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -21,12 +28,13 @@ final class QuickAddPanelController {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = true
         panel.isReleasedWhenClosed = false
-        panel.contentView = NSHostingView(rootView: makeContentView())
+        panel.contentView = QuickAddHostingView(rootView: makeContentView())
     }
 
     func toggle() {
@@ -47,7 +55,7 @@ final class QuickAddPanelController {
     }
 
     private func show() {
-        panel.contentView = NSHostingView(rootView: makeContentView())
+        panel.contentView = QuickAddHostingView(rootView: makeContentView())
         resizeToFitContent(centerOnScreen: !hasInitialPlacement)
         hasInitialPlacement = true
         observePanelBecomingKey()
@@ -75,7 +83,7 @@ final class QuickAddPanelController {
         let fittingSize = contentView.fittingSize
         guard fittingSize.width > 0, fittingSize.height > 0 else { return }
         let topLeft = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
-        panel.setContentSize(NSSize(width: 520, height: ceil(fittingSize.height)))
+        panel.setContentSize(NSSize(width: Self.panelWidth, height: ceil(fittingSize.height)))
         if centerOnScreen {
             centerOnCurrentScreen()
         } else {

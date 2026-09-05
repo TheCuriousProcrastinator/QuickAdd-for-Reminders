@@ -29,6 +29,15 @@ private enum QuickAddFocus: Hashable {
     case addReminder
 }
 
+private enum QuickAddPalette {
+    static let panel = Color(red: 30 / 255, green: 30 / 255, blue: 30 / 255)
+    static let primaryText = Color(red: 230 / 255, green: 230 / 255, blue: 230 / 255)
+    static let secondaryText = Color(red: 160 / 255, green: 160 / 255, blue: 160 / 255)
+    static let placeholderText = Color(red: 116 / 255, green: 116 / 255, blue: 116 / 255)
+    static let divider = Color.white.opacity(0.09)
+    static let disabledAction = Color.white.opacity(0.09)
+}
+
 private struct MetadataFlowLayout: Layout {
     var spacing: CGFloat = 9
     var lineSpacing: CGFloat = 6
@@ -130,7 +139,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color(nsColor: .windowBackgroundColor)
+            QuickAddPalette.panel
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 5) {
@@ -141,6 +150,7 @@ struct ContentView: View {
 
                     Text("Add to Reminders")
                         .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(QuickAddPalette.primaryText)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 2)
@@ -150,7 +160,7 @@ struct ContentView: View {
                         if title.isEmpty {
                             Text("Reminder title")
                                 .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(QuickAddPalette.placeholderText)
                                 .allowsHitTesting(false)
                         }
 
@@ -219,7 +229,7 @@ struct ContentView: View {
                         if notes.isEmpty {
                             Text("Add notes…")
                                 .font(.system(size: 13))
-                                .foregroundStyle(.secondary.opacity(0.8))
+                                .foregroundStyle(QuickAddPalette.secondaryText)
                                 .padding(.top, 4)
                                 .padding(.leading, 5)
                                 .allowsHitTesting(false)
@@ -246,28 +256,7 @@ struct ContentView: View {
 
                     Divider()
                         .padding(.horizontal, 2)
-                        .opacity(0.35)
-
-                    MetadataFlowLayout {
-                        listControl
-                        dateControl
-
-                        if hasDueDate {
-                            timeControl
-                        }
-
-                        if recognizedRecurrenceResult != nil {
-                            recurrenceControl
-                        }
-
-                        priorityControl
-
-                        if reminderURL != nil {
-                            linkControl
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 7)
+                        .overlay(QuickAddPalette.divider)
                 }
 
                 if let errorMessage {
@@ -279,22 +268,27 @@ struct ContentView: View {
                         .padding(.top, 1)
                 }
 
-                HStack {
-                    Spacer()
-                    Button(isSaving ? "Adding…" : "Add Reminder", action: submitTitle)
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .controlSize(.regular)
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .focused($focusedControl, equals: .addReminder)
-                        .disabled(isSaving || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedListID.isEmpty)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        metadataControls
+                        Spacer(minLength: 12)
+                        addReminderButton
+                    }
+
+                    VStack(alignment: .trailing, spacing: 7) {
+                        metadataControls
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        addReminderButton
+                    }
                 }
                 .padding(.horizontal, 2)
+                .padding(.top, 6)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 18)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
         }
-        .frame(width: 520)
+        .frame(width: 580)
         .onReceive(NotificationCenter.default.publisher(for: .quickAddTitleFocusRequested)) { _ in
             focusRequestID += 1
         }
@@ -332,6 +326,35 @@ struct ContentView: View {
         .task {
             loadLists()
         }
+    }
+
+    private var metadataControls: some View {
+        MetadataFlowLayout {
+            listControl
+            dateControl
+
+            if hasDueDate {
+                timeControl
+            }
+
+            if recognizedRecurrenceResult != nil {
+                recurrenceControl
+            }
+
+            priorityControl
+
+            if reminderURL != nil {
+                linkControl
+            }
+        }
+    }
+
+    private var addReminderButton: some View {
+        Button(isSaving ? "Adding…" : "Add Reminder", action: submitTitle)
+            .buttonStyle(PrimaryActionButtonStyle())
+            .keyboardShortcut(.return, modifiers: .command)
+            .focused($focusedControl, equals: .addReminder)
+            .disabled(isSaving || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedListID.isEmpty)
     }
 
     private func loadLists() {
@@ -859,7 +882,7 @@ struct ContentView: View {
         Label(title, systemImage: systemImage)
             .lineLimit(1)
             .truncationMode(.tail)
-            .foregroundStyle(accented ? Color.blue : Color.secondary)
+            .foregroundStyle(accented ? Color.blue : QuickAddPalette.secondaryText)
     }
 
     private var notesEditorHeight: CGFloat {
@@ -1298,9 +1321,24 @@ private extension View {
     func metadataItemStyle(accented: Bool = false) -> some View {
         self
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(accented ? Color.blue : Color.secondary)
+            .foregroundStyle(accented ? Color.blue : QuickAddPalette.secondaryText)
             .padding(.vertical, 2)
             .contentShape(Rectangle())
+    }
+}
+
+private struct PrimaryActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(isEnabled ? Color.white : QuickAddPalette.placeholderText)
+            .padding(.horizontal, 14)
+            .frame(height: 32)
+            .background(isEnabled ? Color.blue : QuickAddPalette.disabledAction)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
 

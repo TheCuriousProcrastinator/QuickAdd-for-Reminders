@@ -47,7 +47,7 @@ struct HighlightingTextField: NSViewRepresentable {
             size: scrollView.contentSize
         )
         textView.font = .systemFont(ofSize: 20, weight: .medium)
-        textView.textColor = .labelColor
+        textView.textColor = NSColor(calibratedWhite: 0.90, alpha: 1)
         textView.textContainerInset = .zero
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.maximumNumberOfLines = 1
@@ -174,7 +174,7 @@ struct HighlightingTextField: NSViewRepresentable {
             storage.setAttributes(
                 [
                     .font: NSFont.systemFont(ofSize: 20, weight: .medium),
-                    .foregroundColor: NSColor.labelColor
+                    .foregroundColor: NSColor(calibratedWhite: 0.90, alpha: 1)
                 ],
                 range: fullRange
             )
@@ -374,7 +374,7 @@ struct NotesTextEditor: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.font = .systemFont(ofSize: 13)
-        textView.textColor = .labelColor
+        textView.textColor = NSColor(calibratedWhite: 0.90, alpha: 1)
         textView.textContainerInset = NSSize(width: 5, height: 2)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
