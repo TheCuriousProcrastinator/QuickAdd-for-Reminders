@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             switch service.status {
             case .enabled, .requiresApproval:
                 try service.unregister()
-            case .notRegistered:
+            case .notRegistered, .notFound:
                 try service.register()
                 if service.status == .requiresApproval {
                     let alert = NSAlert()
@@ -65,8 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         SMAppService.openSystemSettingsLoginItems()
                     }
                 }
-            case .notFound:
-                showLaunchAtLoginError("macOS could not find this QuickAdd app. Move it to Applications and try again.")
             @unknown default:
                 showLaunchAtLoginError("macOS returned an unknown login-item status.")
             }
