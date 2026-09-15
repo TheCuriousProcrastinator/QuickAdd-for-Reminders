@@ -12,10 +12,12 @@ struct UpdateCheckerRegression {
             precondition(QuickAddVersion(invalid) == nil)
         }
 
-        let good = #"{"tag_name":"v1.1.8","assets":[{"name":"QuickAdd.zip","browser_download_url":"https://github.com/TheCuriousProcrastinator/QuickAdd-for-Reminders/releases/download/v1.1.8/QuickAdd.zip"}]}"#
+        let digest = String(repeating: "a", count: 64)
+        let good = #"{"tag_name":"v1.1.8","assets":[{"name":"QuickAdd.zip","browser_download_url":"https://github.com/TheCuriousProcrastinator/QuickAdd-for-Reminders/releases/download/v1.1.8/QuickAdd.zip","digest":"sha256:\#(digest)"}]}"#
         let release = try QuickAddUpdateChecker.release(from: Data(good.utf8))
         precondition(release.version == "v1.1.8")
         precondition(release.downloadURL.lastPathComponent == "QuickAdd.zip")
+        precondition(release.sha256 == digest)
 
         let missing = #"{"tag_name":"v1.1.8","assets":[]}"#
         let wrongHost = good.replacingOccurrences(of: "github.com", with: "example.com")

@@ -100,12 +100,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let alert = NSAlert()
                 if latest > installed {
                     alert.messageText = "QuickAdd \(release.version) Is Available"
-                    alert.informativeText = "You have QuickAdd \(installedVersion). Download the new ZIP from GitHub, then replace your app when you're ready."
-                    alert.addButton(withTitle: "Download from GitHub")
+                    alert.informativeText = "You have QuickAdd \(installedVersion). QuickAdd will securely download the update from GitHub, install it, and relaunch."
+                    alert.addButton(withTitle: "Install and Relaunch")
                     alert.addButton(withTitle: "Later")
-                    if alert.runModal() == .alertFirstButtonReturn,
-                       !NSWorkspace.shared.open(release.downloadURL) {
-                        showUpdateError("Couldn’t open the GitHub download in your browser.")
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        installUpdate(release)
                     }
                 } else {
                     alert.messageText = "QuickAdd Is Up to Date"
@@ -114,6 +113,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             } catch {
                 showUpdateError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func installUpdate(_ release: QuickAddRelease) {
+        let appURL = Bundle.main.bundleURL.standardizedFileURL
+        guard appURL.lastPathComponent == "QuickAdd.app",
+              appURL.deletingLastPathComponent().lastPathComponent == "Applications" else {
+            showUpdateError("Move QuickAdd.app to Applications before installing an update.")
+            return
+        }
+
+        let helperURL = appURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Helpers", isDirectory: true)
+            .appendingPathComponent("QuickAddUpdater.app", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: helperURL.path) else {
+            showUpdateError("The QuickAdd updater helper is missing. Download the latest full app from GitHub.")
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.arguments = [
+            "--target", appURL.path,
+            "--url", release.downloadURL.absoluteString,
+            "--sha256", release.sha256,
+            "--version", release.version,
+            "--parent-pid", String(ProcessInfo.processInfo.processIdentifier),
+            "--relaunch", "yes"
+        ]
+        NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration) { [weak self] _, error in
+            if let error {
+                self?.showUpdateError(error.localizedDescription)
+            } else {
+                NSApplication.shared.terminate(nil)
             }
         }
     }

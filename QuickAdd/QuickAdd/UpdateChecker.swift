@@ -20,6 +20,7 @@ struct QuickAddVersion: Comparable {
 struct QuickAddRelease {
     let version: String
     let downloadURL: URL
+    let sha256: String
 }
 
 enum QuickAddUpdateChecker {
@@ -49,6 +50,7 @@ enum QuickAddUpdateChecker {
         struct Asset: Decodable {
             let name: String
             let browser_download_url: URL
+            let digest: String?
         }
     }
 
@@ -75,9 +77,17 @@ enum QuickAddUpdateChecker {
         guard let asset = release.assets.first(where: { $0.name == "QuickAdd.zip" }),
               asset.browser_download_url.scheme == "https",
               asset.browser_download_url.host == "github.com",
-              asset.browser_download_url.path.hasPrefix(downloadPath) else {
+              asset.browser_download_url.path.hasPrefix(downloadPath),
+              let digest = asset.digest,
+              digest.hasPrefix("sha256:"),
+              digest.dropFirst(7).count == 64,
+              digest.dropFirst(7).allSatisfy(\.isHexDigit) else {
             throw CheckError.missingZIP
         }
-        return QuickAddRelease(version: release.tag_name, downloadURL: asset.browser_download_url)
+        return QuickAddRelease(
+            version: release.tag_name,
+            downloadURL: asset.browser_download_url,
+            sha256: String(digest.dropFirst(7)).lowercased()
+        )
     }
 }
