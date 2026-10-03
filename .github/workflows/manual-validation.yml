@@ -1,0 +1,28 @@
+name: Manual clean-environment validation
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build QuickAdd
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project QuickAdd/QuickAdd.xcodeproj \
+            -scheme QuickAdd \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath /tmp/QuickAdd-CI \
+            CODE_SIGNING_ALLOWED=NO \
+            build
