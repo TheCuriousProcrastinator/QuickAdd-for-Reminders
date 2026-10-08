@@ -2,6 +2,28 @@
 
 **Updated:** 2026-10-02
 
+## Shared Vibe Coding workflow rules (2026-10-08)
+
+### Documentation-only handoff exception
+- When the user explicitly requests a documentation-only update, ChatGPT may edit the existing root `VIBECODING_HANDOFF.md` directly through GitHub without requiring a Mac build or a local checkout step.
+- First inspect the actual repository, target branch, and existing handoff. Change only the handoff, preserve historical project context, and verify the resulting GitHub file and commit. Do not use this exception for application code, tests, scripts, configuration, workflows, version/build changes, release assets, or other build-affecting files.
+- Before the next local development change, fetch the remote branch and reconcile the updated handoff with the local checkout. Never overwrite or silently reset unrelated local changes.
+- The normal rule remains: validate the exact executable/build-affecting changes in the real Mac checkout before committing or pushing those changes. Include a current handoff with every meaningful validated development commit.
+
+### Temporary worktrees, releases, and logs
+- Create temporary Git worktrees under `/Users/alex/Desktop/tmp/<project>-...` using a project-specific name.
+- Put release working folders, temporary release artifacts, staging directories, and build/release logs under `/Users/alex/Desktop/tmp/<project>-release-...`.
+- Do not create disposable worktrees inside `/Users/alex/Documents/Vibe Coding`.
+- Do not place release artifacts or logs directly on the Desktop root.
+- After a successful verified release, remove temporary worktrees and temporary release artifacts when safe. Do not remove active worktrees, uncommitted work, published assets, or permanent project files.
+- Retain failure logs only when useful for debugging; remove unnecessary temporary logs.
+- These instructions govern future operations and take precedence over historical temporary-path examples elsewhere in this handoff.
+
+### Low-overhead development defaults
+- Use ChatGPT plus GitHub inspection and Mac-local Terminal scripts by default; do not use Codex, ChatGPT Work, separately billed API agents, or GitHub Actions runners unless explicitly requested.
+- Prefer existing project scripts. Give one local command block to apply, build, test, and launch an executable change, then a separate commit/push block only after required validation is confirmed.
+- Documentation-only updates under the exception above do not require a rebuild.
+
 ## Project
 
 QuickAdd for Reminders is a standalone macOS menu bar app for quickly creating Apple Reminders from anywhere.
