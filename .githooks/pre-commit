@@ -1,0 +1,6 @@
+#!/bin/sh
+# Vibe Handoff: synchronize generated facts only, preserving manually written context.
+set -eu
+ROOT="$(git rev-parse --show-toplevel)"
+PYTHON="${PYTHON:-python3}"
+exec "$PYTHON" "$ROOT/Tools/vibe_handoff.py" sync-staged "$ROOT"
